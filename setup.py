@@ -2,7 +2,7 @@ from setuptools import setup, find_packages
 
 setup(
     name="demucs_acapella",
-    version="1.0.1",
+    version="1.0.2",
     description="A CLI tool for extracting acapellas using Demucs and managing audio metadata.",
     long_description=open("README.md").read(),
     long_description_content_type="text/markdown",

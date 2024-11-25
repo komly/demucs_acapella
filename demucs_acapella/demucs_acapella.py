@@ -6,9 +6,10 @@ import subprocess
 from pydub.utils import mediainfo
 import eyed3
 
-def extract_vocals(input_file, output_folder):
+def extract_vocals_and_beats(input_file, output_folder):
     """
-    Uses Demucs to extract vocals (acapella) from the entire input file and save them in the output folder.
+    Uses Demucs to extract vocals (acapella) and beats (instrumental) from the input file
+    and save them in the output folder.
     """
     try:
         subprocess.run(
@@ -19,14 +20,15 @@ def extract_vocals(input_file, output_folder):
         model_folder = next(output_folder.iterdir())
         result_folder = model_folder / input_file.stem
         vocals_file = result_folder / "vocals.wav"
+        beat_file = result_folder / "no_vocals.wav"  # Instrumental (no vocals)
 
-        if not vocals_file.exists():
-            raise FileNotFoundError(f"Vocals file not found: {vocals_file}")
+        if not vocals_file.exists() or not beat_file.exists():
+            raise FileNotFoundError(f"Expected files not found: {vocals_file}, {beat_file}")
 
-        return vocals_file
+        return vocals_file, beat_file
     except Exception as e:
-        print(f"Error extracting vocals from {input_file}: {e}")
-        return None
+        print(f"Error extracting vocals and beats from {input_file}: {e}")
+        return None, None
 
 def get_bpm(file_path):
     """
@@ -34,12 +36,7 @@ def get_bpm(file_path):
     """
     try:
         audio_info = mediainfo(str(file_path))
-        
-        if "bpm" in audio_info:
-            bpm = audio_info["bpm"]
-        else:
-            bpm = 120
-
+        bpm = audio_info.get("bpm", 120)  # Default to 120 if not found
         return bpm
     except Exception as e:
         print(f"Error getting BPM for {file_path}: {e}")
@@ -64,7 +61,8 @@ def add_bpm_tag(file_path, bpm):
 
 def process_files(input_dir, output_dir):
     """
-    Process all audio files in the input directory, extract vocals, and save them in the output directory.
+    Process all audio files in the input directory, extract vocals and beats,
+    and save them in the output directory.
     """
     input_dir = Path(input_dir)
     output_dir = Path(output_dir)
@@ -84,35 +82,42 @@ def process_files(input_dir, output_dir):
                 continue
 
             source_path = Path(root) / file
-            print(f"Extracting vocals from {source_path}...")
+            print(f"Processing {source_path}...")
 
             temp_output = output_dir / "temp_demucs"
             temp_output.mkdir(parents=True, exist_ok=True)
 
-            vocals_file = extract_vocals(source_path, temp_output)
-            if vocals_file is None:
+            vocals_file, beat_file = extract_vocals_and_beats(source_path, temp_output)
+            if vocals_file is None or beat_file is None:
                 print(f"Skipping {source_path} due to extraction failure.")
                 continue
 
-            new_name = f"{source_path.stem}_acapella.wav"
-            final_path = destination_folder / new_name
+            # Rename and move vocals and beat files
+            vocals_name = f"{source_path.stem}_acapella.wav"
+            beat_name = f"{source_path.stem}_beat.wav"
+            vocals_path = destination_folder / vocals_name
+            beat_path = destination_folder / beat_name
 
             try:
-                shutil.move(vocals_file, final_path)
-                print(f"Saved acapella to: {final_path}")
+                shutil.move(vocals_file, vocals_path)
+                shutil.move(beat_file, beat_path)
+                print(f"Saved acapella to: {vocals_path}")
+                print(f"Saved beat to: {beat_path}")
 
+                # Add BPM metadata to vocals and beat files
                 bpm = get_bpm(source_path)
                 if bpm:
-                    add_bpm_tag(final_path, bpm)
+                    add_bpm_tag(vocals_path, bpm)
+                    add_bpm_tag(beat_path, bpm)
             except Exception as e:
-                print(f"Failed to move {vocals_file} to {final_path}: {e}")
+                print(f"Failed to move files for {source_path}: {e}")
 
             shutil.rmtree(temp_output, ignore_errors=True)
 
 def main():
-    parser = argparse.ArgumentParser(description="Extract vocals (acapella) from full audio files, add BPM, and save them in the same folder structure.")
+    parser = argparse.ArgumentParser(description="Extract vocals (acapella) and beats (instrumental) from audio files, add BPM, and save them in the same folder structure.")
     parser.add_argument("-i", "--input", required=True, help="Path to the input folder containing audio files.")
-    parser.add_argument("-o", "--output", required=True, help="Path to the output folder where acapella files will be stored.")
+    parser.add_argument("-o", "--output", required=True, help="Path to the output folder where extracted files will be stored.")
 
     args = parser.parse_args()
     process_files(args.input, args.output)
